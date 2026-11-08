@@ -154,6 +154,11 @@ Scope {
             sticky = true;
     }
 
+    // Hyprland >= 0.57: dispatch takes a Lua dispatcher expression
+    function focusWindow(address) {
+        Hyprland.dispatch('hl.dsp.focus({ window = "address:' + address + '" })');
+    }
+
     function close() {
         sticky = false;
         opened = false;
@@ -167,8 +172,8 @@ Scope {
         property string address: ""
         interval: 40
         onTriggered: {
-            Hyprland.dispatch("focuswindow address:" + address);
-            Hyprland.dispatch("alterzorder top,address:" + address);
+            root.focusWindow(address);
+            Hyprland.dispatch('hl.dsp.window.alter_zorder({ window = "address:' + address + '", mode = "top" })');
             refocusTimer.restart();
         }
     }
@@ -178,7 +183,7 @@ Scope {
     Timer {
         id: refocusTimer
         interval: 150
-        onTriggered: Hyprland.dispatch("focuswindow address:" + focusTimer.address)
+        onTriggered: root.focusWindow(focusTimer.address)
     }
 
     IpcHandler {
