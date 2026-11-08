@@ -1,5 +1,5 @@
 // App launcher for Hyprland (Quickshell).
-// Run: qs -c launcher            Toggle: qs -c launcher ipc call launcher toggle
+// Part of: qs -c desktop          Toggle: qs -c desktop ipc call launcher toggle
 //
 // - Categories (sidebar): Favorites, Recent, All + freedesktop main categories
 // - Fuzzy search over name / generic name / keywords / comment (frequently used apps rank higher)
@@ -13,7 +13,7 @@ import Quickshell.Wayland
 import Quickshell.Hyprland
 import Quickshell.Widgets
 
-ShellRoot {
+Scope {
     id: root
 
     property bool opened: false

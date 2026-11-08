@@ -1,8 +1,8 @@
 // Workspace / window switcher for Hyprland.
 // Left: column of workspaces, each with horizontal bars for its windows.
 // Right: zoomed live preview of the selected window.
-// Run: qs -c coverflow
-// Control: qs -c coverflow ipc call coverflow next|prev|confirm|cancel|state
+// Part of: qs -c desktop
+// Control: qs -c desktop ipc call coverflow next|prev|confirm|cancel|state
 import QtQuick
 import Quickshell
 import Quickshell.Io
@@ -10,7 +10,7 @@ import Quickshell.Wayland
 import Quickshell.Hyprland
 import Quickshell.Widgets
 
-ShellRoot {
+Scope {
     id: root
 
     property bool opened: false
