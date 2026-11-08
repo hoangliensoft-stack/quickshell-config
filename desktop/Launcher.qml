@@ -80,6 +80,58 @@ Scope {
         return "other";
     }
 
+    // Lowercase + strip Vietnamese diacritics: "Trình duyệt Đồ họa" -> "trinh duyet do hoa"
+    function fold(s) {
+        return (s || "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/đ/g, "d");
+    }
+
+    // Vietnamese search words per freedesktop category (apps' own names are mostly English)
+    readonly property var viWords: ({
+        WebBrowser: "trình duyệt web lướt web",
+        Network: "mạng internet trực tuyến",
+        Email: "thư điện tử email",
+        InstantMessaging: "nhắn tin trò chuyện chat",
+        Chat: "nhắn tin trò chuyện chat",
+        FileTransfer: "truyền tệp tải lên tải xuống ftp",
+        RemoteAccess: "điều khiển từ xa truy cập từ xa",
+        Development: "lập trình viết code phát triển",
+        IDE: "lập trình môi trường phát triển",
+        TextEditor: "soạn thảo văn bản ghi chú sửa file",
+        Office: "văn phòng tài liệu",
+        WordProcessor: "văn bản soạn thảo word",
+        Spreadsheet: "bảng tính excel",
+        Presentation: "trình chiếu thuyết trình",
+        Calendar: "lịch",
+        Graphics: "đồ họa hình ảnh vẽ thiết kế",
+        Photography: "ảnh chụp ảnh chỉnh sửa ảnh",
+        Viewer: "xem ảnh trình xem",
+        RasterGraphics: "chỉnh sửa ảnh vẽ",
+        VectorGraphics: "vẽ vector thiết kế",
+        AudioVideo: "đa phương tiện âm thanh video",
+        Audio: "âm thanh nghe nhạc",
+        Video: "video xem phim",
+        Player: "trình phát nghe nhạc xem phim",
+        Music: "nghe nhạc",
+        Game: "trò chơi game",
+        Education: "giáo dục học tập",
+        Science: "khoa học",
+        Utility: "tiện ích công cụ",
+        Calculator: "máy tính tính toán",
+        Archiving: "nén giải nén",
+        Compression: "nén giải nén",
+        FileManager: "quản lý tệp tập tin thư mục file",
+        FileTools: "tệp tập tin file",
+        TerminalEmulator: "dòng lệnh terminal",
+        Settings: "cài đặt thiết lập cấu hình",
+        DesktopSettings: "cài đặt giao diện màn hình",
+        HardwareSettings: "phần cứng thiết bị",
+        Monitor: "giám sát hệ thống tài nguyên",
+        System: "hệ thống",
+        Security: "bảo mật",
+        Accessibility: "trợ năng",
+        Printing: "máy in in ấn"
+    })
+
     function loadApps() {
         const seen = {};
         const list = [];
@@ -90,15 +142,28 @@ Scope {
                 continue;
             seen[e.id] = true;
             const cats = Array.from(e.categories || []);
+            const primary = primaryCategory(cats);
+            const catDef = categoryDefs.find(c => c.key === primary);
+            const vi = cats.map(c => viWords[c] || "").concat(catDef ? [catDef.label] : []).join(" ");
+            const keywords = Array.from(e.keywords || []).join(" ");
             list.push({
                 id: e.id,
                 name: e.name || e.id,
                 generic: e.genericName || "",
                 comment: e.comment || "",
                 icon: e.icon || "",
-                keywords: Array.from(e.keywords || []).join(" "),
+                keywords: keywords,
+                // folded (lowercase, no diacritics) copies used for searching
+                f: {
+                    name: fold(e.name || e.id),
+                    generic: fold(e.genericName),
+                    keywords: fold(keywords),
+                    id: fold(e.id),
+                    comment: fold(e.comment),
+                    vi: fold(vi)
+                },
                 cats: cats,
-                primary: primaryCategory(cats),
+                primary: primary,
                 terminal: e.runInTerminal,
                 command: Array.from(e.command || []),
                 workdir: e.workingDirectory || "",
@@ -145,17 +210,23 @@ Scope {
         }
     }
 
+    // q must already be folded (see fold())
     function score(app, q) {
-        const name = app.name.toLowerCase();
+        const f = app.f;
+        const name = f.name;
+        const all = [f.name, f.generic, f.keywords, f.id, f.comment, f.vi].join(" ");
+        const words = q.split(/\s+/).filter(w => w);
         let s = 0;
         if (name === q) s = 120;
         else if (name.startsWith(q)) s = 100;
         else if (name.split(/[\s\-_.]+/).some(w => w.startsWith(q))) s = 85;
         else if (name.indexOf(q) >= 0) s = 70;
-        else if (app.generic.toLowerCase().indexOf(q) >= 0) s = 50;
-        else if (app.keywords.toLowerCase().indexOf(q) >= 0) s = 45;
-        else if (app.id.toLowerCase().indexOf(q) >= 0) s = 40;
-        else if (app.comment.toLowerCase().indexOf(q) >= 0) s = 30;
+        else if (f.vi.indexOf(q) >= 0) s = 55;          // Vietnamese: "trinh duyet", "do hoa"
+        else if (f.generic.indexOf(q) >= 0) s = 50;
+        else if (f.keywords.indexOf(q) >= 0) s = 45;
+        else if (f.id.indexOf(q) >= 0) s = 40;
+        else if (f.comment.indexOf(q) >= 0) s = 30;
+        else if (words.length > 1 && words.every(w => all.indexOf(w) >= 0)) s = 28;
         else {
             // fuzzy subsequence on the name
             let i = 0, gaps = 0, last = -1;
@@ -178,7 +249,7 @@ Scope {
 
     function refresh() {
         let list;
-        const q = query.trim().toLowerCase();
+        const q = fold(query.trim());
         // Compute modes from the query directly: the commandMode/calcMode bindings
         // may not have re-evaluated yet when onQueryChanged runs.
         if (query.startsWith(">") || calc(query) !== null) {
