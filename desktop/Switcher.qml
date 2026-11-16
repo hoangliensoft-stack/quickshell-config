@@ -167,6 +167,31 @@ Scope {
             sticky = true;
     }
 
+    // ---------- scrolling through the list ----------
+    // A touchpad sends dozens of small wheel events per swipe (plus kinetic ones after the
+    // fingers lift). Accumulate them: one step per mouse-wheel notch (120 units) and at most
+    // one step every wheelMinInterval ms, leftovers are dropped so it never runs away.
+    readonly property int wheelNotch: 120
+    readonly property int wheelMinInterval: 90
+    property real wheelAcc: 0
+    property double lastWheelStep: 0
+
+    function wheelStep(wheel) {
+        sticky = true;
+        const d = wheel.angleDelta.y !== 0 ? wheel.angleDelta.y : wheel.angleDelta.x;
+        if (d === 0)
+            return;
+        if (wheelAcc !== 0 && Math.sign(d) !== Math.sign(wheelAcc))
+            wheelAcc = 0; // direction changed
+        wheelAcc += d;
+        const now = Date.now();
+        if (Math.abs(wheelAcc) >= wheelNotch && now - lastWheelStep >= wheelMinInterval) {
+            step(wheelAcc > 0 ? -1 : 1);
+            wheelAcc = 0;
+            lastWheelStep = now;
+        }
+    }
+
     // Hyprland >= 0.57: dispatch takes a Lua dispatcher expression
     function focusWindow(address) {
         Hyprland.dispatch('hl.dsp.focus({ window = "address:' + address + '" })');
@@ -306,10 +331,7 @@ Scope {
                 anchors.fill: parent
                 enabled: root.opened
                 onClicked: root.close()
-                onWheel: wheel => {
-                    root.sticky = true;
-                    root.step(wheel.angleDelta.y > 0 ? -1 : 1);
-                }
+                onWheel: wheel => root.wheelStep(wheel)
             }
         }
 
@@ -393,6 +415,9 @@ Scope {
                 contentHeight: col.implicitHeight
                 clip: true
                 boundsBehavior: Flickable.StopAtBounds
+                // no own scrolling: the wheel moves the selection (root.wheelStep) and the
+                // column follows the selected bar (ensureVisible)
+                interactive: false
                 opacity: root.progress
                 transform: Translate { x: root.fromBottom ? 0 : -48 * (1 - root.progress) }
 
