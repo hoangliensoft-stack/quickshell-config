@@ -14,6 +14,11 @@ Scope {
     id: root
 
     property bool opened: false
+    // ---------- open/close animation ----------
+    property bool shown: false      // overlay mapped (stays true while the close animation runs)
+    property real progress: 0       // 0 = hidden, 1 = fully open
+    property bool fromBottom: false // opened by the 3-finger swipe up: everything rises from below
+    property bool intro: false      // right after opening: workspace blocks appear one by one
     property bool loading: false
     property bool pendingConfirm: false
     property int pendingSteps: 0
@@ -75,7 +80,15 @@ Scope {
         sticky = false;
         pointerStart = Qt.point(-1, -1);
         loading = true;
+        fromBottom = false;
+        introTimer.restart();
+        shown = true;
         opened = true;
+        progressAnim.stop();
+        progressAnim.to = 1;
+        progressAnim.duration = 240;
+        progressAnim.easing.type = Easing.OutCubic;
+        progressAnim.start();
         clientsProc.running = true;
     }
 
@@ -161,10 +174,34 @@ Scope {
 
     function close() {
         sticky = false;
-        opened = false;
         loading = false;
-        windows = [];
-        groups = [];
+        if (!opened)
+            return;
+        opened = false;   // keyboard is released immediately (see keyboardFocus)
+        progressAnim.stop();
+        progressAnim.to = 0;
+        progressAnim.duration = 150;
+        progressAnim.easing.type = Easing.InCubic;
+        progressAnim.start();
+    }
+
+    NumberAnimation {
+        id: progressAnim
+        target: root
+        property: "progress"
+        onFinished: {
+            if (!root.opened) {   // close animation done: unmap and drop the window list
+                root.shown = false;
+                root.windows = [];
+                root.groups = [];
+            }
+        }
+    }
+    Timer {
+        id: introTimer
+        interval: 700
+        onRunningChanged: if (running) root.intro = true
+        onTriggered: root.intro = false
     }
 
     Timer {
@@ -200,6 +237,7 @@ Scope {
             }
             root.open(1);
             root.sticky = true;
+            root.fromBottom = true;
         }
         function swipeDown(): void { root.close(); }
         function cancel(): void { root.close(); }
@@ -237,7 +275,7 @@ Scope {
     PanelWindow {
         id: panel
 
-        visible: root.opened
+        visible: root.shown
         screen: {
             const m = Hyprland.focusedMonitor;
             const s = Quickshell.screens;
@@ -256,15 +294,17 @@ Scope {
         exclusionMode: ExclusionMode.Ignore
         color: "transparent"
         WlrLayershell.layer: WlrLayer.Overlay
-        WlrLayershell.keyboardFocus: WlrKeyboardFocus.Exclusive
+        WlrLayershell.keyboardFocus: root.opened ? WlrKeyboardFocus.Exclusive : WlrKeyboardFocus.None
         WlrLayershell.namespace: "coverflow"
 
         Rectangle {
             anchors.fill: parent
             color: "#e00b0d14"
+            opacity: root.progress
 
             MouseArea {
                 anchors.fill: parent
+                enabled: root.opened
                 onClicked: root.close()
                 onWheel: wheel => {
                     root.sticky = true;
@@ -278,7 +318,8 @@ Scope {
             anchors.horizontalCenter: parent.horizontalCenter
             anchors.bottom: parent.bottom
             anchors.bottomMargin: 18
-            visible: root.opened
+            visible: root.shown
+            opacity: root.progress
             text: root.sticky
                   ? "🖱  Chế độ chuột — rê để xem · click để chuyển · Esc hoặc click ra ngoài để đóng"
                   : "Tab / Shift+Tab để chọn · thả Super để chuyển · di chuột để dùng chuột"
@@ -291,6 +332,8 @@ Scope {
             anchors.fill: parent
             anchors.margins: Math.round(Math.min(panel.width, panel.height) * 0.06)
             focus: root.opened
+            enabled: root.opened
+            transform: Translate { y: root.fromBottom ? 120 * (1 - root.progress) : 0 }
 
             readonly property real colW: Math.min(460, width * 0.32)
             readonly property real gap: 36
@@ -350,6 +393,8 @@ Scope {
                 contentHeight: col.implicitHeight
                 clip: true
                 boundsBehavior: Flickable.StopAtBounds
+                opacity: root.progress
+                transform: Translate { x: root.fromBottom ? 0 : -48 * (1 - root.progress) }
 
                 Behavior on contentY { NumberAnimation { duration: 180; easing.type: Easing.OutCubic } }
 
@@ -375,6 +420,18 @@ Scope {
                         delegate: Rectangle {
                             id: wsBox
                             required property var modelData
+                            required property int index
+
+                            // appear one after another right after opening
+                            property real appear: root.intro ? 0 : 1
+                            opacity: appear
+                            transform: Translate { x: -24 * (1 - wsBox.appear) }
+                            Component.onCompleted: if (root.intro) wsIntro.start()
+                            SequentialAnimation {
+                                id: wsIntro
+                                PauseAnimation { duration: 40 + Math.min(wsBox.index, 8) * 55 }
+                                NumberAnimation { target: wsBox; property: "appear"; to: 1; duration: 260; easing.type: Easing.OutCubic }
+                            }
 
                             width: col.width
                             implicitHeight: wsCol.implicitHeight + 20
@@ -506,6 +563,8 @@ Scope {
                 x: stage.colW + stage.gap
                 width: stage.width - x
                 height: stage.height
+                opacity: root.progress
+                scale: 0.92 + 0.08 * root.progress
 
                 readonly property real infoH: 64
 
@@ -525,7 +584,7 @@ Scope {
                     ScreencopyView {
                         id: shot
                         anchors.centerIn: parent
-                        captureSource: root.opened && root.current ? root.current.toplevel : null
+                        captureSource: root.shown && root.current ? root.current.toplevel : null
                         live: true
                         constraintSize: Qt.size(previewArea.width - 12, previewArea.height - previewArea.infoH - 12)
                     }
