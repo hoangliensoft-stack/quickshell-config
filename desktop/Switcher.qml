@@ -192,6 +192,27 @@ Scope {
         Hyprland.dispatch('hl.dsp.focus({ window = "address:' + address + '" })');
     }
 
+    // ---------- "Tiled": open a workspace with all its windows tiled ----------
+    // (no fullscreen / maximized / floating; done in Lua: DESKTOP_TILE_WS in hypr/lua/desktop.lua)
+    function tileWorkspace(id) {
+        if (!opened || !(id > 0))
+            return;
+        close();
+        tileTimer.wsId = id;
+        tileTimer.restart();   // after the overlay is gone, like focusTimer
+    }
+
+    Timer {
+        id: tileTimer
+        property int wsId: 0
+        interval: 40
+        onTriggered: tileProc.exec(["hyprctl", "eval", "DESKTOP_TILE_WS(" + wsId + ")"])
+    }
+
+    Process {
+        id: tileProc
+    }
+
     // ---------- closing a window from the switcher ----------
     // The switcher stays open (mouse mode) and the list updates; the list is re-read shortly
     // after, so an app that refuses to close (e.g. "save changes?") shows up again.
@@ -239,10 +260,12 @@ Scope {
         list.forEach((w, i) => {
             let g = gs.length ? gs[gs.length - 1] : null;
             if (!g || g.id !== w.wsId) {
-                g = { id: w.wsId, name: w.wsName, focused: w.wsId === focusedWs, items: [] };
+                g = { id: w.wsId, name: w.wsName, focused: w.wsId === focusedWs, items: [], untiled: 0 };
                 gs.push(g);
             }
             g.items.push(i);
+            if (w.fs || w.floating)
+                g.untiled++;
         });
         windows = list;
         groups = gs;
@@ -353,6 +376,8 @@ Scope {
                     wsId: c.workspace ? c.workspace.id : 0,
                     wsName: c.workspace ? c.workspace.name : "",
                     mru: c.focusHistoryID,
+                    fs: c.fullscreen > 0,
+                    floating: !!c.floating,
                     toplevel: root.findToplevel(c.address)
                 })));
             }
@@ -405,8 +430,8 @@ Scope {
             visible: root.shown
             opacity: root.progress
             text: root.sticky
-                  ? "🖱  Chế độ chuột — rê để xem · click để chuyển · × hoặc Delete để đóng ứng dụng · Esc để thoát"
-                  : "Tab / Shift+Tab để chọn · thả Super để chuyển · Delete để đóng ứng dụng · di chuột để dùng chuột"
+                  ? "🖱  Chế độ chuột — rê để xem · click để chuyển · × / Delete đóng ứng dụng · ⊞ / T mở workspace dạng tiled · Esc để thoát"
+                  : "Tab / Shift+Tab để chọn · thả Super để chuyển · Delete đóng ứng dụng · T mở workspace dạng tiled · di chuột để dùng chuột"
             color: root.sticky ? "#66ccff" : "#77ffffff"
             font.pixelSize: 13
         }
@@ -444,6 +469,10 @@ Scope {
                     root.close(); break;
                 case Qt.Key_Delete:
                     root.closeWindow(root.currentIndex); break;
+                case Qt.Key_T:
+                    if (root.current)
+                        root.tileWorkspace(root.current.wsId);
+                    break;
                 default:
                     return;
                 }
@@ -536,6 +565,18 @@ Scope {
                                 spacing: 6
 
                                 // Workspace header
+                                Item {
+                                    width: wsCol.width
+                                    height: 28
+
+                                TileButton {
+                                    anchors.right: parent.right
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    visible: wsBox.modelData.id > 0
+                                    attention: wsBox.modelData.untiled > 0
+                                    onClicked: root.tileWorkspace(wsBox.modelData.id)
+                                }
+
                                 Row {
                                     spacing: 8
                                     leftPadding: 4
@@ -560,6 +601,7 @@ Scope {
                                         font.pixelSize: 14
                                         font.bold: true
                                     }
+                                }
                                 }
 
                                 // Window bars
