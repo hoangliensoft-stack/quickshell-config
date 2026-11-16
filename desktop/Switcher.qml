@@ -105,19 +105,14 @@ Scope {
         const wsKey = c => c.wsId > 0 ? c.wsId : 100000 - c.wsId;
         const list = clients.slice().sort((a, b) => wsKey(a) - wsKey(b) || a.mru - b.mru);
 
-        const focusedWs = Hyprland.focusedWorkspace ? Hyprland.focusedWorkspace.id : null;
-        const gs = [];
-        list.forEach((w, i) => {
-            let g = gs.length ? gs[gs.length - 1] : null;
-            if (!g || g.id !== w.wsId) {
-                g = { id: w.wsId, name: w.wsName, focused: w.wsId === focusedWs, items: [] };
-                gs.push(g);
-            }
-            g.items.push(i);
-        });
+        setList(list);
 
-        windows = list;
-        groups = gs;
+        if (keepAddress !== "") {   // refresh after closing a window
+            const k = list.findIndex(w => w.address === keepAddress);
+            keepAddress = "";
+            currentIndex = k >= 0 ? k : wrap(currentIndex);
+            return;
+        }
 
         // First press selects the previously used window (MRU #1), further presses walk the list
         const byMru = r => Math.max(0, list.findIndex(w => w.mru === r));
@@ -197,7 +192,53 @@ Scope {
         Hyprland.dispatch('hl.dsp.focus({ window = "address:' + address + '" })');
     }
 
+    // ---------- closing a window from the switcher ----------
+    // The switcher stays open (mouse mode) and the list updates; the list is re-read shortly
+    // after, so an app that refuses to close (e.g. "save changes?") shows up again.
+    property string keepAddress: ""   // selection to keep across a refresh
+
+    function closeWindow(i) {
+        const w = windows[i];
+        if (!w || loading)
+            return;
+        sticky = true;
+        Hyprland.dispatch('hl.dsp.window.close({ window = "address:' + w.address + '" })');
+        const list = windows.filter((_, j) => j !== i);
+        if (list.length === 0) {
+            close();
+            return;
+        }
+        const next = list[Math.min(i, list.length - 1)];
+        setList(list);
+        currentIndex = Math.max(0, list.indexOf(next));
+        keepAddress = next.address;
+        refreshTimer.restart();
+    }
+
+    function setList(list) {
+        const focusedWs = Hyprland.focusedWorkspace ? Hyprland.focusedWorkspace.id : null;
+        const gs = [];
+        list.forEach((w, i) => {
+            let g = gs.length ? gs[gs.length - 1] : null;
+            if (!g || g.id !== w.wsId) {
+                g = { id: w.wsId, name: w.wsName, focused: w.wsId === focusedWs, items: [] };
+                gs.push(g);
+            }
+            g.items.push(i);
+        });
+        windows = list;
+        groups = gs;
+    }
+
+    Timer {
+        id: refreshTimer
+        interval: 450
+        onTriggered: if (root.opened && !root.loading) clientsProc.running = true
+    }
+
     function close() {
+        refreshTimer.stop();
+        keepAddress = "";
         sticky = false;
         loading = false;
         if (!opened)
@@ -266,6 +307,7 @@ Scope {
         }
         function swipeDown(): void { root.close(); }
         function cancel(): void { root.close(); }
+        function closeCurrent(): void { root.closeWindow(root.currentIndex); }
         function state(): string {
             return JSON.stringify({ opened: root.opened, loading: root.loading,
                                     index: root.currentIndex, count: root.windows.length,
@@ -343,8 +385,8 @@ Scope {
             visible: root.shown
             opacity: root.progress
             text: root.sticky
-                  ? "🖱  Chế độ chuột — rê để xem · click để chuyển · Esc hoặc click ra ngoài để đóng"
-                  : "Tab / Shift+Tab để chọn · thả Super để chuyển · di chuột để dùng chuột"
+                  ? "🖱  Chế độ chuột — rê để xem · click để chuyển · × hoặc Delete để đóng ứng dụng · Esc để thoát"
+                  : "Tab / Shift+Tab để chọn · thả Super để chuyển · Delete để đóng ứng dụng · di chuột để dùng chuột"
             color: root.sticky ? "#66ccff" : "#77ffffff"
             font.pixelSize: 13
         }
@@ -380,6 +422,8 @@ Scope {
                     root.confirm(); break;
                 case Qt.Key_Escape:
                     root.close(); break;
+                case Qt.Key_Delete:
+                    root.closeWindow(root.currentIndex); break;
                 default:
                     return;
                 }
@@ -533,7 +577,7 @@ Scope {
                                         Row {
                                             anchors.fill: parent
                                             anchors.leftMargin: 18
-                                            anchors.rightMargin: 12
+                                            anchors.rightMargin: 44
                                             spacing: 10
                                             IconImage {
                                                 anchors.verticalCenter: parent.verticalCenter
@@ -573,6 +617,15 @@ Scope {
                                                 root.currentIndex = bar.modelData;
                                                 root.confirm();
                                             }
+                                        }
+
+                                        CloseButton {
+                                            anchors.right: parent.right
+                                            anchors.rightMargin: 9
+                                            anchors.verticalCenter: parent.verticalCenter
+                                            size: 26
+                                            shown: bar.isCurrent || barMouse.containsMouse || hovered
+                                            onClicked: root.closeWindow(bar.modelData)
                                         }
                                     }
                                 }
@@ -624,6 +677,15 @@ Scope {
                     MouseArea {
                         anchors.fill: parent
                         onClicked: root.confirm()
+                    }
+
+                    CloseButton {
+                        anchors.top: parent.top
+                        anchors.right: parent.right
+                        anchors.margins: 14
+                        size: 38
+                        shown: !!root.current
+                        onClicked: root.closeWindow(root.currentIndex)
                     }
                 }
 
