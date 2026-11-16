@@ -197,12 +197,30 @@ Scope {
     // after, so an app that refuses to close (e.g. "save changes?") shows up again.
     property string keepAddress: ""   // selection to keep across a refresh
 
+    property string closingAddress: "" // bar playing its "closing" animation
+
     function closeWindow(i) {
         const w = windows[i];
-        if (!w || loading)
+        if (!w || loading || closingAddress !== "")
             return;
         sticky = true;
         Hyprland.dispatch('hl.dsp.window.close({ window = "address:' + w.address + '" })');
+        closingAddress = w.address;   // let the bar slide out first, then drop it from the list
+        removeTimer.restart();
+    }
+
+    Timer {
+        id: removeTimer
+        interval: 220
+        onTriggered: root.dropClosed()
+    }
+
+    function dropClosed() {
+        const addr = closingAddress;
+        closingAddress = "";
+        const i = windows.findIndex(w => w.address === addr);
+        if (!opened || i < 0)
+            return;
         const list = windows.filter((_, j) => j !== i);
         if (list.length === 0) {
             close();
@@ -238,6 +256,8 @@ Scope {
 
     function close() {
         refreshTimer.stop();
+        removeTimer.stop();
+        closingAddress = "";
         keepAddress = "";
         sticky = false;
         loading = false;
@@ -551,11 +571,20 @@ Scope {
                                         required property int modelData
                                         readonly property var win: root.windows[modelData]
                                         readonly property bool isCurrent: modelData === root.currentIndex
+                                        readonly property bool closing: !!win && win.address === root.closingAddress
+                                        clip: closing
 
                                         width: wsCol.width
-                                        height: 46
+                                        height: closing ? 0 : 46
+                                        opacity: closing ? 0 : 1
+                                        transform: Translate {
+                                            x: bar.closing ? 60 : 0
+                                            Behavior on x { NumberAnimation { duration: 200; easing.type: Easing.InCubic } }
+                                        }
+                                        Behavior on height { NumberAnimation { duration: 200; easing.type: Easing.InOutCubic } }
+                                        Behavior on opacity { NumberAnimation { duration: 180 } }
                                         radius: 10
-                                        color: isCurrent ? "#2a66ccff" : barMouse.containsMouse ? "#1affffff" : "#0dffffff"
+                                        color: closing ? "#55e0443e" : isCurrent ? "#2a66ccff" : barMouse.containsMouse ? "#1affffff" : "#0dffffff"
                                         border.width: isCurrent ? 2 : 0
                                         border.color: root.accent
                                         Behavior on color { ColorAnimation { duration: 120 } }
@@ -683,7 +712,8 @@ Scope {
                         anchors.top: parent.top
                         anchors.right: parent.right
                         anchors.margins: 14
-                        size: 38
+                        size: 40
+                        label: "Đóng ứng dụng"
                         shown: !!root.current
                         onClicked: root.closeWindow(root.currentIndex)
                     }
