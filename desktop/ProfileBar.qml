@@ -28,6 +28,8 @@ Item {
     Rectangle {
         id: tray
         anchors.horizontalCenter: parent.horizontalCenter
+        // profile tray + tools tray are centred as one group
+        anchors.horizontalCenterOffset: -(toolsTray.width + toolsGap) / 2
         anchors.top: parent.top
         width: row.width + 16 * bar.k
         height: row.height + 14 * bar.k
@@ -55,6 +57,17 @@ Item {
                 }
             }
         }
+    }
+
+    // screenshot / screen-recording buttons
+    readonly property real toolsGap: 10 * k
+    ToolsTray {
+        id: toolsTray
+        bar: bar
+        sw: bar.sw
+        anchors.left: tray.right
+        anchors.leftMargin: bar.toolsGap
+        anchors.top: tray.top
     }
 
     Row {

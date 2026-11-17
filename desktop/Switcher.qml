@@ -396,6 +396,20 @@ Scope {
         }
     }
 
+    // ---------- screenshot / recording buttons (ToolsTray) ----------
+    // close first and give the overlay time to unmap, so it is not in the picture
+    function runTool(cmd) {
+        close();
+        toolTimer.cmd = cmd;
+        toolTimer.restart();
+    }
+    Timer {
+        id: toolTimer
+        property var cmd: []
+        interval: 350
+        onTriggered: Quickshell.execDetached(cmd)
+    }
+
     // ---------- "Tiled": open a workspace with all its windows tiled ----------
     // (no fullscreen / maximized / floating; done in Lua: DESKTOP_TILE_WS in hypr/lua/desktop.lua)
     function tileWorkspace(id) {
