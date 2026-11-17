@@ -12,7 +12,9 @@ Item {
     property int renaming: -1
     property int confirmDelete: -1
     property string hint: ""          // shown by the switcher's hint line while hovering
-    readonly property real k: 1.35    // size of the whole bar (1 = compact)
+    readonly property real k: 1.15    // size of the whole bar (1 = compact)
+    readonly property color blue: "#2f8cff"
+    readonly property color purple: "#9b5cff"
 
     height: tray.height + 30          // tray + room for the toast underneath
 
@@ -30,10 +32,29 @@ Item {
         width: row.width + 16 * bar.k
         height: row.height + 14 * bar.k
         radius: height / 2
-        color: "#0fffffff"
-        border.width: 1
-        border.color: "#1fffffff"
+        opacity: 0.55
+        gradient: Gradient {
+            orientation: Gradient.Horizontal
+            GradientStop { position: 0; color: "#552f8cff" }
+            GradientStop { position: 1; color: "#559b5cff" }
+        }
         Behavior on width { NumberAnimation { duration: 160; easing.type: Easing.OutCubic } }
+        Rectangle {   // dark glass body, 1px inside -> gradient hairline border
+            anchors.fill: parent
+            anchors.margins: 1
+            radius: height / 2
+            color: "#e6121624"
+            Rectangle {
+                anchors.fill: parent
+                radius: height / 2
+                opacity: 0.10
+                gradient: Gradient {
+                    orientation: Gradient.Horizontal
+                    GradientStop { position: 0; color: bar.blue }
+                    GradientStop { position: 1; color: bar.purple }
+                }
+            }
+        }
     }
 
     Row {
@@ -57,15 +78,14 @@ Item {
                         required property int index
                         x: 0; y: index * 5 * bar.k
                         width: 16 * bar.k; height: 4 * bar.k; radius: height / 2
-                        color: "#8fa0bd"
-                        opacity: 1 - index * 0.25
+                        color: index === 0 ? bar.blue : index === 1 ? "#6f74ff" : bar.purple
                     }
                 }
             }
             Text {
                 anchors.verticalCenter: parent.verticalCenter
                 text: "Profile"
-                color: "#8fa0bd"
+                color: "#a9b4ff"
                 font.pixelSize: 13 * bar.k
                 font.bold: true
                 font.letterSpacing: 0.5
@@ -95,14 +115,38 @@ Item {
                 onHotChanged: if (hot) bar.hint = "Click: mở các app còn thiếu và xếp vào đúng workspace  ·  ⟳ lưu đè bố cục hiện tại  ·  × xóa  ·  chuột phải: đổi tên"
                               else if (bar.hint !== "") bar.hint = ""
 
+                // edge: blue -> purple on hover, red while confirming a delete
                 Rectangle {
                     anchors.fill: parent
                     radius: height / 2
-                    color: pill.deleting ? "#4de0443e" : pill.hot ? "#2effffff" : "#14ffffff"
-                    border.width: 1
-                    border.color: pill.deleting ? "#ff8a80" : pill.hot ? "#66ccff" : "#24ffffff"
-                    Behavior on color { ColorAnimation { duration: 120 } }
-                    Behavior on border.color { ColorAnimation { duration: 120 } }
+                    gradient: Gradient {
+                        orientation: Gradient.Horizontal
+                        GradientStop { position: 0; color: pill.deleting ? "#ff8a80" : pill.hot ? bar.blue : "#2a6f74ff" }
+                        GradientStop { position: 1; color: pill.deleting ? "#ff8a80" : pill.hot ? bar.purple : "#2a9b5cff" }
+                    }
+                }
+                Rectangle {
+                    anchors.fill: parent
+                    anchors.margins: 1
+                    radius: height / 2
+                    color: "#171b2a"
+                    Rectangle {
+                        anchors.fill: parent
+                        radius: height / 2
+                        opacity: pill.deleting ? 0 : pill.hot ? 0.38 : 0.13
+                        Behavior on opacity { NumberAnimation { duration: 140 } }
+                        gradient: Gradient {
+                            orientation: Gradient.Horizontal
+                            GradientStop { position: 0; color: bar.blue }
+                            GradientStop { position: 1; color: bar.purple }
+                        }
+                    }
+                    Rectangle {
+                        anchors.fill: parent
+                        radius: height / 2
+                        color: "#4de0443e"
+                        visible: pill.deleting
+                    }
                 }
 
                 MouseArea {
@@ -154,7 +198,7 @@ Item {
                         visible: pill.editing
                         width: Math.max(80 * bar.k, contentWidth + 4)
                         color: "white"
-                        selectionColor: "#66ccff"
+                        selectionColor: "#7b6cff"
                         selectedTextColor: "#0b0d14"
                         font.pixelSize: 13 * bar.k
                         font.bold: true
@@ -177,7 +221,7 @@ Item {
                         anchors.verticalCenter: parent.verticalCenter
                         visible: !pill.editing
                         text: pill.st.total - pill.st.missing + "/" + pill.st.total
-                        color: "#8fa0bd"
+                        color: "#a9b4ff"
                         font.pixelSize: 11 * bar.k
                     }
 
@@ -234,10 +278,28 @@ Item {
             Rectangle {
                 anchors.fill: parent
                 radius: height / 2
-                color: addPill.hot ? "#2266ccff" : "transparent"
-                border.width: 1
-                border.color: addPill.hot ? "#66ccff" : "#33ffffff"
-                Behavior on color { ColorAnimation { duration: 120 } }
+                gradient: Gradient {
+                    orientation: Gradient.Horizontal
+                    GradientStop { position: 0; color: addPill.hot ? bar.blue : "#406f74ff" }
+                    GradientStop { position: 1; color: addPill.hot ? bar.purple : "#409b5cff" }
+                }
+            }
+            Rectangle {
+                anchors.fill: parent
+                anchors.margins: 1
+                radius: height / 2
+                color: "#171b2a"
+                Rectangle {
+                    anchors.fill: parent
+                    radius: height / 2
+                    opacity: addPill.hot ? 0.85 : 0
+                    Behavior on opacity { NumberAnimation { duration: 140 } }
+                    gradient: Gradient {
+                        orientation: Gradient.Horizontal
+                        GradientStop { position: 0; color: bar.blue }
+                        GradientStop { position: 1; color: bar.purple }
+                    }
+                }
             }
             Row {
                 id: addRow
@@ -246,7 +308,7 @@ Item {
                 Text {
                     anchors.verticalCenter: parent.verticalCenter
                     text: "+"
-                    color: addPill.hot ? "#66ccff" : "#aab4c8"
+                    color: addPill.hot ? "white" : "#a9b4ff"
                     font.pixelSize: 17 * bar.k
                     font.bold: true
                 }
@@ -299,7 +361,7 @@ Item {
         signal clicked()
         width: armed ? actText.implicitWidth + 14 * bar.k : 20 * bar.k
         height: 20 * bar.k; radius: height / 2
-        color: armed || hot ? (danger ? "#e0443e" : "#4066ccff") : "transparent"
+        color: armed || hot ? (danger ? "#e0443e" : "#807b6cff") : "transparent"
         Behavior on width { NumberAnimation { duration: 140; easing.type: Easing.OutCubic } }
         Behavior on color { ColorAnimation { duration: 100 } }
         Text {
