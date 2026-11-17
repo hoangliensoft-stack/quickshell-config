@@ -396,6 +396,22 @@ Scope {
         }
     }
 
+    // ---------- every workspace at once (LayoutTray) ----------
+    // runs DESKTOP_TILE_ALL / DESKTOP_FULLSCREEN_ALL (hypr/lua/desktop.lua); the switcher stays
+    // open (mouse mode) and re-reads the windows so the chips show the new state
+    function applyLayoutAll(kind) {
+        if (!opened || loading)
+            return;
+        sticky = true;
+        Quickshell.execDetached(["hyprctl", "eval", kind === "full" ? "DESKTOP_FULLSCREEN_ALL()" : "DESKTOP_TILE_ALL()"]);
+        const n = groups.filter(g => g.id > 0).length;
+        profileBar.showToast(kind === "full" ? "✓ " + n + " workspace: cửa sổ dùng gần nhất đã phủ kín màn hình"
+                                             : "✓ " + n + " workspace đã chuyển sang tiled");
+        if (current)
+            keepAddress = current.address;
+        refreshTimer.restart();
+    }
+
     // ---------- screenshot / recording buttons (ToolsTray) ----------
     // close first and give the overlay time to unmap, so it is not in the picture
     function runTool(cmd) {

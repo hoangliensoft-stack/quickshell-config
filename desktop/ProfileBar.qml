@@ -28,8 +28,8 @@ Item {
     Rectangle {
         id: tray
         anchors.horizontalCenter: parent.horizontalCenter
-        // profile tray + tools tray are centred as one group
-        anchors.horizontalCenterOffset: -(toolsTray.width + toolsGap) / 2
+        // layout tray | profile tray | tools tray are centred as one group
+        anchors.horizontalCenterOffset: (layoutTray.width - toolsTray.width) / 2
         anchors.top: parent.top
         width: row.width + 16 * bar.k
         height: row.height + 14 * bar.k
@@ -61,6 +61,16 @@ Item {
 
     // screenshot / screen-recording buttons
     readonly property real toolsGap: 10 * k
+    // "Tiled tất cả" / "Full screen tất cả"
+    LayoutTray {
+        id: layoutTray
+        bar: bar
+        sw: bar.sw
+        anchors.right: tray.left
+        anchors.rightMargin: bar.toolsGap
+        anchors.top: tray.top
+    }
+
     ToolsTray {
         id: toolsTray
         bar: bar
