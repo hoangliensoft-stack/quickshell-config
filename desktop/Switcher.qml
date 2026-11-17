@@ -652,7 +652,7 @@ Scope {
 
             readonly property real colW: Math.min(460, width * 0.32)
             readonly property real gap: 36
-            readonly property real topH: 64   // profile bar + spacing
+            readonly property real topH: profileBar.height + 16   // profile bar + spacing
 
             ProfileBar {
                 id: profileBar
