@@ -7,6 +7,7 @@
 // - Command: type ">cmd" -> Enter runs it, Ctrl+Enter runs it in a terminal
 // - Ctrl+F or right-click: add/remove favorite
 import QtQuick
+import QtQuick.Effects
 import Quickshell
 import Quickshell.Io
 import Quickshell.Wayland
@@ -26,7 +27,23 @@ Scope {
     property var usage: ({})   // { id: { count, last } }
 
     readonly property string terminal: "kitty"
-    readonly property color accent: "#66ccff"
+    readonly property color accent: "#a9b4ff"   // text accent (lavender between blue and purple)
+    readonly property color blue: "#2f8cff"
+    readonly property color purple: "#9b5cff"
+
+    // slowly flowing blue <-> purple for the panel border and glow
+    property real phase: 0
+    NumberAnimation on phase {
+        from: 0; to: 1
+        duration: 8000
+        loops: Animation.Infinite
+        running: root.opened
+    }
+    function mix(t, a) {
+        const f = 0.5 - 0.5 * Math.cos(2 * Math.PI * t);
+        return Qt.rgba(blue.r + (purple.r - blue.r) * f, blue.g + (purple.g - blue.g) * f,
+                       blue.b + (purple.b - blue.b) * f, a === undefined ? 1 : a);
+    }
     readonly property string stateDir: Quickshell.env("HOME") + "/.local/state/quickshell-launcher"
 
     readonly property var categoryDefs: [
@@ -500,9 +517,50 @@ Scope {
             height: Math.min(700, win.height * 0.82)
             anchors.centerIn: parent
             radius: 22
-            color: "#f2141821"
-            border.width: 1
-            border.color: "#26ffffff"
+            color: "transparent"
+
+            // blue -> purple glow behind the panel
+            Rectangle {
+                anchors.fill: parent
+                anchors.margins: -10
+                radius: panel.radius + 10
+                opacity: 0.38
+                gradient: Gradient {
+                    orientation: Gradient.Horizontal
+                    GradientStop { position: 0; color: root.mix(root.phase) }
+                    GradientStop { position: 1; color: root.mix(root.phase + 0.5) }
+                }
+                layer.enabled: true
+                layer.effect: MultiEffect { blurEnabled: true; blur: 1.0; blurMax: 64; autoPaddingEnabled: true }
+            }
+            // gradient edge (shows as a 1.5px border around the body)
+            Rectangle {
+                anchors.fill: parent
+                radius: panel.radius
+                opacity: 0.85
+                gradient: Gradient {
+                    orientation: Gradient.Horizontal
+                    GradientStop { position: 0;   color: root.mix(root.phase) }
+                    GradientStop { position: 0.5; color: root.mix(root.phase + 0.33) }
+                    GradientStop { position: 1;   color: root.mix(root.phase + 0.66) }
+                }
+            }
+            Rectangle {
+                anchors.fill: parent
+                anchors.margins: 1.5
+                radius: panel.radius - 1.5
+                color: "#141821"
+                Rectangle {
+                    anchors.fill: parent
+                    radius: parent.radius
+                    opacity: 0.07
+                    gradient: Gradient {
+                        orientation: Gradient.Horizontal
+                        GradientStop { position: 0; color: root.blue }
+                        GradientStop { position: 1; color: root.purple }
+                    }
+                }
+            }
 
             // open / close animation: fade + zoom + slide up
             opacity: root.progress
@@ -519,9 +577,24 @@ Scope {
                 width: parent.width - 40
                 height: 56
                 radius: 14
-                color: "#1d222e"
-                border.width: search.activeFocus ? 2 : 1
-                border.color: search.activeFocus ? root.accent : "#22ffffff"
+                color: "#22ffffff"   // idle hairline
+                Rectangle {          // focused: blue -> purple edge
+                    anchors.fill: parent
+                    radius: parent.radius
+                    opacity: search.activeFocus ? 1 : 0
+                    Behavior on opacity { NumberAnimation { duration: 160 } }
+                    gradient: Gradient {
+                        orientation: Gradient.Horizontal
+                        GradientStop { position: 0; color: root.blue }
+                        GradientStop { position: 1; color: root.purple }
+                    }
+                }
+                Rectangle {
+                    anchors.fill: parent
+                    anchors.margins: search.activeFocus ? 2 : 1
+                    radius: parent.radius - anchors.margins
+                    color: "#1d222e"
+                }
 
                 IconImage {
                     id: searchIcon
@@ -543,7 +616,7 @@ Scope {
                     anchors.verticalCenter: parent.verticalCenter
                     color: "white"
                     font.pixelSize: 20
-                    selectionColor: root.accent
+                    selectionColor: "#7b6cff"
                     selectedTextColor: "#0b0d14"
                     clip: true
                     text: root.query
@@ -596,7 +669,11 @@ Scope {
                     width: visible ? chipText.implicitWidth + 20 : 0
                     height: 30
                     radius: 15
-                    color: "#2266ccff"
+                    gradient: Gradient {
+                        orientation: Gradient.Horizontal
+                        GradientStop { position: 0; color: "#402f8cff" }
+                        GradientStop { position: 1; color: "#409b5cff" }
+                    }
                     Text {
                         id: chipText
                         anchors.centerIn: parent
@@ -626,17 +703,15 @@ Scope {
                         width: sidebar.width
                         height: 40
                         radius: 10
-                        color: active ? "#2a66ccff" : catMouse.containsMouse ? "#14ffffff" : "transparent"
-                        Behavior on color { ColorAnimation { duration: 100 } }
+                        color: "transparent"
 
-                        Rectangle {
-                            visible: cat.active
-                            width: 3; radius: 2
-                            height: 20
-                            anchors.left: parent.left
-                            anchors.leftMargin: 4
-                            anchors.verticalCenter: parent.verticalCenter
-                            color: root.accent
+                        GradientBar {
+                            anchors.fill: parent
+                            radius: cat.radius
+                            active: cat.active
+                            hot: catMouse.containsMouse
+                            opacity: cat.active || catMouse.containsMouse ? 1 : 0
+                            Behavior on opacity { NumberAnimation { duration: 140 } }
                         }
                         IconImage {
                             id: catIcon
@@ -782,13 +857,12 @@ Scope {
                         width: grid.cellWidth
                         height: grid.cellHeight
                         color: "transparent"
-                        Rectangle {
+                        GradientBar {
                             anchors.fill: parent
                             anchors.margins: 5
                             radius: 14
-                            color: "#2a66ccff"
-                            border.width: 2
-                            border.color: root.accent
+                            active: true
+                            strip: false
                         }
                     }
 
@@ -826,7 +900,7 @@ Scope {
                             anchors.fill: parent
                             anchors.margins: 5
                             radius: 14
-                            color: !tile.isCurrent && tileMouse.containsMouse ? "#12ffffff" : "transparent"
+                            color: !tile.isCurrent && tileMouse.containsMouse ? "#1a7b6cff" : "transparent"
                             Behavior on color { ColorAnimation { duration: 100 } }
 
                             IconImage {

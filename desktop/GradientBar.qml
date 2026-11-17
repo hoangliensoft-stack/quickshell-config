@@ -11,6 +11,7 @@ Item {
     property bool hot: false
     property bool closing: false
     property real radius: 10
+    property bool strip: true     // accent strip on the left (off for grid tiles)
 
     readonly property color blue: "#2f8cff"
     readonly property color purple: "#9b5cff"
@@ -114,7 +115,7 @@ Item {
         anchors.left: parent.left
         anchors.leftMargin: 6
         anchors.verticalCenter: parent.verticalCenter
-        opacity: g.edgeA
+        opacity: g.strip ? g.edgeA : 0
         visible: opacity > 0
         gradient: Gradient {
             GradientStop { position: 0; color: g.mix(g.phase) }
