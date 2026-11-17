@@ -1,6 +1,7 @@
 // One Quickshell process for the whole desktop UI.
 // Run: qs -c desktop          (after editing QML: ./restart.sh)
 //   Switcher.qml  - window switcher   (ipc target "coverflow": next|prev|release|confirm|cancel|swipeUp|swipeDown|state)
+//                   swipeDown opens the launcher when the switcher is closed
 //   Launcher.qml  - app launcher      (ipc target "launcher":  toggle|open|hide|search|state|slowmo)
 import QtQuick
 import Quickshell
@@ -12,6 +13,10 @@ ShellRoot {
     //   ~/.config/quickshell/desktop/restart.sh
     settings.watchFiles: false
 
-    Switcher {}
-    Launcher {}
+    Switcher {
+        launcher: launcher   // 3-finger swipe down opens the launcher when the switcher is closed
+    }
+    Launcher {
+        id: launcher
+    }
 }

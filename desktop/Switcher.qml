@@ -15,6 +15,7 @@ Scope {
     id: root
 
     property bool opened: false
+    property var launcher: null     // Launcher (set in shell.qml)
     // ---------- open/close animation ----------
     property bool shown: false      // overlay mapped (stays true while the close animation runs)
     property real progress: 0       // 0 = hidden, 1 = fully open
@@ -582,7 +583,13 @@ Scope {
             root.sticky = true;
             root.fromBottom = true;
         }
-        function swipeDown(): void { root.close(); }
+        // 3-finger swipe down: closes the switcher; when it is not open, opens the app launcher
+        function swipeDown(): void {
+            if (root.opened)
+                root.close();
+            else if (root.launcher && !root.launcher.opened)
+                root.launcher.open();
+        }
         function cancel(): void { root.close(); }
         function closeCurrent(): void { root.closeWindow(root.currentIndex); }
         function state(): string {
