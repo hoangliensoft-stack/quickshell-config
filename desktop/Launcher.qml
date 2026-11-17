@@ -44,6 +44,7 @@ Scope {
         return Qt.rgba(blue.r + (purple.r - blue.r) * f, blue.g + (purple.g - blue.g) * f,
                        blue.b + (purple.b - blue.b) * f, a === undefined ? 1 : a);
     }
+    property var switcher: null      // Switcher (set in shell.qml)
     readonly property string stateDir: Quickshell.env("HOME") + "/.local/state/quickshell-launcher"
 
     readonly property var categoryDefs: [
@@ -379,6 +380,8 @@ Scope {
     }
 
     function open() {
+        if (switcher && switcher.opened)
+            switcher.close();
         loadApps();
         query = "";
         category = favorites.length ? "fav" : (Object.keys(usage).length ? "recent" : "all");

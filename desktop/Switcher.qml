@@ -74,6 +74,9 @@ Scope {
     }
 
     function open(d) {
+        // only one overlay at a time: Alt/Super+Tab or the swipe up close the launcher first
+        if (launcher && launcher.opened)
+            launcher.close();
         windows = [];
         groups = [];
         currentIndex = 0;

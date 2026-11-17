@@ -14,9 +14,11 @@ ShellRoot {
     settings.watchFiles: false
 
     Switcher {
+        id: switcher
         launcher: launcher   // 3-finger swipe down opens the launcher when the switcher is closed
     }
     Launcher {
         id: launcher
+        switcher: switcher   // opening the launcher closes the switcher (and vice versa)
     }
 }
