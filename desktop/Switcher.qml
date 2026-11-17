@@ -842,23 +842,18 @@ Scope {
                                         Behavior on height { NumberAnimation { duration: 200; easing.type: Easing.InOutCubic } }
                                         Behavior on opacity { NumberAnimation { duration: 180 } }
                                         radius: 10
-                                        color: closing ? "#55e0443e" : isCurrent ? "#2a66ccff" : barMouse.containsMouse ? "#1affffff" : "#0dffffff"
-                                        border.width: isCurrent ? 2 : 0
-                                        border.color: root.accent
-                                        Behavior on color { ColorAnimation { duration: 120 } }
+                                        color: "transparent"
 
                                         onIsCurrentChanged: if (isCurrent) Qt.callLater(list.ensureVisible, bar)
                                         Component.onCompleted: if (isCurrent) Qt.callLater(list.ensureVisible, bar)
 
-                                        // Accent strip on the selected bar
-                                        Rectangle {
-                                            visible: bar.isCurrent
-                                            width: 4; radius: 2
-                                            height: parent.height - 16
-                                            anchors.left: parent.left
-                                            anchors.leftMargin: 6
-                                            anchors.verticalCenter: parent.verticalCenter
-                                            color: root.accent
+                                        // blue -> purple gradient background, flowing on the selected bar
+                                        GradientBar {
+                                            anchors.fill: parent
+                                            radius: bar.radius
+                                            active: bar.isCurrent
+                                            hot: barMouse.containsMouse
+                                            closing: bar.closing
                                         }
 
                                         Row {
