@@ -4,6 +4,7 @@
 // Part of: qs -c desktop
 // Control: qs -c desktop ipc call coverflow next|prev|confirm|cancel|state
 import QtQuick
+import QtQuick.Effects
 import Quickshell
 import Quickshell.Io
 import Quickshell.Wayland
@@ -192,6 +193,209 @@ Scope {
         Hyprland.dispatch('hl.dsp.focus({ window = "address:' + address + '" })');
     }
 
+    // ---------- profiles: saved sets of apps + their workspaces ----------
+    // ~/.local/state/quickshell-switcher/profiles.json
+    //   { profiles: [ { name, apps: [ { cls, ws, cmd } ] } ] }
+    // Applying one opens only the apps that are missing (DESKTOP_PROFILE_LAUNCH in hypr/lua/desktop.lua).
+    property var profiles: []
+    readonly property string profDir: Quickshell.env("HOME") + "/.local/state/quickshell-switcher"
+
+    FileView {
+        id: profFile
+        path: root.profDir + "/profiles.json"
+        printErrors: false
+        watchChanges: true            // hand edits of profiles.json are picked up
+        onFileChanged: reload()
+        onLoaded: {
+            try {
+                root.profiles = JSON.parse(text()).profiles || [];
+            } catch (e) {
+                console.warn("switcher: bad profiles file", e);
+            }
+        }
+    }
+    Component.onCompleted: Quickshell.execDetached(["mkdir", "-p", profDir])
+
+    function writeProfiles(list) {
+        profiles = list;
+        profFile.setText(JSON.stringify({ profiles: list }, null, 1));
+    }
+
+    function focusStage() {
+        stage.forceActiveFocus();
+    }
+
+    // Pair the profile's apps with open windows: same class on the same workspace first,
+    // then same class anywhere. Whatever is left over is missing.
+    // key of a window/app: its class, or for class-less windows (e.g. Java apps such as
+    // SQL Developer) the app name found in the title
+    function appKey(a) {
+        return a.cls ? a.cls.toLowerCase() : "title:" + (a.match || "").toLowerCase();
+    }
+
+    function profileMatch(p) {
+        const pool = {};
+        const titled = (p.apps || []).filter(a => !a.cls && a.match).map(a => a.match.toLowerCase());
+        windows.forEach(w => {
+            let k = (w.cls || "").toLowerCase();
+            if (!k) {
+                const t = (w.title || "").toLowerCase();
+                const m = titled.find(x => t.includes(x));
+                if (!m)
+                    return;
+                k = "title:" + m;
+            }
+            (pool[k] = pool[k] || []).push(w.wsId);
+        });
+        const left = [];
+        (p.apps || []).forEach(a => {
+            const ws = pool[root.appKey(a)] || [];
+            const i = ws.indexOf(a.ws);
+            if (i >= 0) ws.splice(i, 1);
+            else left.push(a);
+        });
+        const missing = [];
+        left.forEach(a => {
+            const ws = pool[root.appKey(a)] || [];
+            if (ws.length) ws.shift();
+            else missing.push(a);
+        });
+        return missing;
+    }
+
+    function profileStatus(p) {
+        return { total: (p.apps || []).length, missing: profileMatch(p).length };
+    }
+
+    function applyProfile(i) {
+        const p = profiles[i];
+        if (!p || loading)
+            return;
+        const missing = profileMatch(p);
+        close();
+        if (missing.length === 0) {
+            Quickshell.execDetached(["notify-send", "-a", "Window switcher", "-i", "view-grid",
+                                     p.name, "Tất cả " + p.apps.length + " ứng dụng đã mở"]);
+            return;
+        }
+        const q = s => "[==[" + String(s).replace(/\]==\]/g, "") + "]==]";
+        const lua = missing.map(a => "DESKTOP_PROFILE_LAUNCH(" + q(a.cls) + ", " + a.ws + ", " + q(a.cmd) + ")").join("; ");
+        Quickshell.execDetached(["hyprctl", "eval", lua]);
+        const names = missing.map(a => a.cls + " → " + a.ws).join("\n");
+        Quickshell.execDetached(["notify-send", "-a", "Window switcher", "-i", "view-grid",
+                                 p.name + ": mở " + missing.length + " ứng dụng", names]);
+    }
+
+    function renameProfile(i, name) {
+        const list = profiles.slice();
+        if (!list[i])
+            return;
+        list[i] = Object.assign({}, list[i], { name: name });
+        writeProfiles(list);
+    }
+
+    function deleteProfile(i) {
+        const list = profiles.slice();
+        const p = list.splice(i, 1)[0];
+        writeProfiles(list);
+        if (p)
+            profileBar.showToast("Đã xóa “" + p.name + "”");
+    }
+
+    // Save the current layout into profile i (-1 = new). The launch command of each app comes
+    // from its .desktop entry; apps without one use their process command line.
+    function saveProfile(i) {
+        const wins = windows.filter(w => w.wsId > 0);
+        if (!wins.length || cmdProc.running)
+            return;
+        cmdProc.target = i;
+        cmdProc.wins = wins;
+        const pids = [...new Set(wins.map(w => String(w.pid)))];
+        cmdProc.command = ["sh", "-c",
+            'for p; do printf "%s\\t" "$p"; tr "\\0" "\\037" < /proc/$p/cmdline 2>/dev/null; echo; done',
+            "sh"].concat(pids);
+        cmdProc.running = true;
+    }
+
+    function cleanExec(e) {
+        return e && e.execString ? e.execString.replace(/\s+%[fFuUdDnNickvm]/g, "").replace(/%%/g, "%").trim() : "";
+    }
+
+    function desktopCommand(cls) {
+        return cls ? cleanExec(DesktopEntries.heuristicLookup(cls)) : "";
+    }
+
+    // class-less window: the longest app name that appears in its title
+    function entryFromTitle(title) {
+        const t = (title || "").toLowerCase();
+        let best = null;
+        DesktopEntries.applications.values.forEach(e => {
+            const n = (e.name || "").toLowerCase();
+            if (n.length >= 4 && t.includes(n) && (!best || n.length > best.name.length))
+                best = e;
+        });
+        return best;
+    }
+
+    function shellJoin(args) {
+        return args.map(a => /^[\w@%+=:,.\/-]+$/.test(a) ? a : "'" + a.replace(/'/g, "'\\''") + "'").join(" ");
+    }
+
+    function finishSave(cmdlines) {
+        const apps = [];
+        cmdProc.wins.forEach(w => {
+            if (!w.cls) {
+                const e = entryFromTitle(w.title);
+                if (e && cleanExec(e))
+                    apps.push({ cls: "", match: e.name, ws: w.wsId, cmd: cleanExec(e) });
+                return;
+            }
+            let cmd = desktopCommand(w.cls);
+            if (!cmd && cmdlines[String(w.pid)])
+                cmd = shellJoin(cmdlines[String(w.pid)]);
+            if (cmd)
+                apps.push({ cls: w.cls, ws: w.wsId, cmd: cmd });
+        });
+        apps.sort((a, b) => a.ws - b.ws);
+        const list = profiles.slice();
+        const i = cmdProc.target;
+        let name;
+        if (i >= 0 && list[i]) {
+            name = list[i].name;
+            list[i] = { name: name, apps: apps };
+        } else {
+            let n = 1;
+            while (list.some(p => p.name === "Profile " + n))
+                n++;
+            name = "Profile " + n;
+            list.push({ name: name, apps: apps });
+        }
+        writeProfiles(list);
+        const skipped = cmdProc.wins.length - apps.length;
+        profileBar.showToast("✓ Đã lưu “" + name + "” — " + apps.length + " ứng dụng"
+                             + (skipped ? " (bỏ qua " + skipped + " không rõ lệnh mở)" : ""));
+    }
+
+    Process {
+        id: cmdProc
+        property int target: -1
+        property var wins: []
+        stdout: StdioCollector {
+            onStreamFinished: {
+                const map = {};
+                this.text.split("\n").forEach(line => {
+                    const t = line.indexOf("\t");
+                    if (t < 0)
+                        return;
+                    const args = line.slice(t + 1).split("\x1f").filter(x => x !== "");
+                    if (args.length)
+                        map[line.slice(0, t)] = args;
+                });
+                root.finishSave(map);
+            }
+        }
+    }
+
     // ---------- "Tiled": open a workspace with all its windows tiled ----------
     // (no fullscreen / maximized / floating; done in Lua: DESKTOP_TILE_WS in hypr/lua/desktop.lua)
     function tileWorkspace(id) {
@@ -376,6 +580,7 @@ Scope {
                     wsId: c.workspace ? c.workspace.id : 0,
                     wsName: c.workspace ? c.workspace.name : "",
                     mru: c.focusHistoryID,
+                    pid: c.pid,
                     fs: c.fullscreen > 0,
                     floating: !!c.floating,
                     toplevel: root.findToplevel(c.address)
@@ -429,10 +634,11 @@ Scope {
             anchors.bottomMargin: 18
             visible: root.shown
             opacity: root.progress
-            text: root.sticky
+            text: profileBar.hint !== "" ? profileBar.hint
+                  : root.sticky
                   ? "🖱  Chế độ chuột — rê để xem · click để chuyển · × / Delete đóng ứng dụng · ⊞ / T mở workspace dạng tiled · Esc để thoát"
                   : "Tab / Shift+Tab để chọn · thả Super để chuyển · Delete đóng ứng dụng · T mở workspace dạng tiled · di chuột để dùng chuột"
-            color: root.sticky ? "#66ccff" : "#77ffffff"
+            color: profileBar.hint !== "" || root.sticky ? "#66ccff" : "#77ffffff"
             font.pixelSize: 13
         }
 
@@ -446,6 +652,15 @@ Scope {
 
             readonly property real colW: Math.min(460, width * 0.32)
             readonly property real gap: 36
+            readonly property real topH: 64   // profile bar + spacing
+
+            ProfileBar {
+                id: profileBar
+                sw: root
+                width: parent.width
+                opacity: root.progress
+                transform: Translate { y: -24 * (1 - root.progress) }
+            }
 
             Keys.onPressed: e => {
                 switch (e.key) {
@@ -503,8 +718,9 @@ Scope {
             Flickable {
                 id: list
                 width: stage.colW
-                height: Math.min(stage.height, col.implicitHeight)
+                height: Math.min(stage.height - stage.topH, col.implicitHeight)
                 anchors.verticalCenter: parent.verticalCenter
+                anchors.verticalCenterOffset: stage.topH / 2
                 contentHeight: col.implicitHeight
                 clip: true
                 boundsBehavior: Flickable.StopAtBounds
@@ -706,107 +922,198 @@ Scope {
                 }
             }
 
-            // ---------- Right: zoomed preview of the selected window ----------
+            // ---------- Right: preview of the selected window ----------
+            // Rounded live capture with a soft shadow and a hairline border; the details sit
+            // underneath as quiet chips; the close button only appears while hovering the capture.
             Item {
                 id: previewArea
                 x: stage.colW + stage.gap
+                y: stage.topH
                 width: stage.width - x
-                height: stage.height
+                height: stage.height - stage.topH
                 opacity: root.progress
-                scale: 0.92 + 0.08 * root.progress
+                scale: 0.94 + 0.06 * root.progress
 
-                readonly property real infoH: 64
+                readonly property real infoH: 76
+                readonly property real r: 14
 
-                Rectangle {
+                Item {
                     id: frame
                     anchors.horizontalCenter: parent.horizontalCenter
                     anchors.verticalCenter: parent.verticalCenter
                     anchors.verticalCenterOffset: -previewArea.infoH / 2
-                    width: shot.hasContent ? shot.width + 12 : previewArea.width * 0.6
-                    height: shot.hasContent ? shot.height + 12 : previewArea.height * 0.5
-                    radius: 16
-                    color: "#1b1f2a"
-                    border.width: 2
-                    border.color: root.accent
-                    clip: true
+                    width: shot.hasContent ? shot.width : previewArea.width * 0.6
+                    height: shot.hasContent ? shot.height : previewArea.height * 0.5
+                    Behavior on width { NumberAnimation { duration: 180; easing.type: Easing.OutCubic } }
+                    Behavior on height { NumberAnimation { duration: 180; easing.type: Easing.OutCubic } }
+
+                    // soft shadow: a few widening, fading rounded rects
+                    Repeater {
+                        model: 4
+                        Rectangle {
+                            required property int index
+                            readonly property real d: 4 + index * 7
+                            x: -d; y: -d + 10
+                            width: frame.width + 2 * d; height: frame.height + 2 * d
+                            radius: previewArea.r + d
+                            color: "black"
+                            opacity: 0.16 - index * 0.035
+                        }
+                    }
+
+                    Rectangle {
+                        anchors.fill: parent
+                        radius: previewArea.r
+                        color: "#141821"
+                    }
 
                     ScreencopyView {
                         id: shot
                         anchors.centerIn: parent
                         captureSource: root.shown && root.current ? root.current.toplevel : null
                         live: true
-                        constraintSize: Qt.size(previewArea.width - 12, previewArea.height - previewArea.infoH - 12)
+                        constraintSize: Qt.size(previewArea.width - 8, previewArea.height - previewArea.infoH - 8)
+                        layer.enabled: true
+                        layer.effect: MultiEffect {
+                            maskEnabled: true
+                            maskSource: shotMask
+                            maskThresholdMin: 0.5
+                            maskSpreadAtMin: 1.0
+                        }
+                    }
+                    Item {
+                        id: shotMask
+                        width: shot.width; height: shot.height
+                        layer.enabled: true
+                        visible: false
+                        Rectangle { anchors.fill: parent; radius: previewArea.r; color: "black" }
                     }
 
                     IconImage {
                         anchors.centerIn: parent
                         visible: !shot.hasContent
-                        implicitSize: 128
+                        implicitSize: 96
+                        opacity: 0.8
                         source: root.current ? root.icon(root.current.cls) : ""
                     }
 
+                    // hairline border + a faint top highlight (glass edge)
+                    Rectangle {
+                        anchors.fill: parent
+                        radius: previewArea.r
+                        color: "transparent"
+                        border.width: 1
+                        border.color: frameHover.hovered ? "#8066ccff" : "#2effffff"
+                        Behavior on border.color { ColorAnimation { duration: 160 } }
+                    }
+                    Rectangle {
+                        anchors.top: parent.top
+                        anchors.horizontalCenter: parent.horizontalCenter
+                        anchors.topMargin: 1
+                        width: parent.width - 2 * previewArea.r
+                        height: 1
+                        gradient: Gradient {
+                            orientation: Gradient.Horizontal
+                            GradientStop { position: 0; color: "transparent" }
+                            GradientStop { position: 0.5; color: "#59ffffff" }
+                            GradientStop { position: 1; color: "transparent" }
+                        }
+                    }
+
+                    HoverHandler { id: frameHover }
                     MouseArea {
                         anchors.fill: parent
+                        cursorShape: Qt.PointingHandCursor
                         onClicked: root.confirm()
                     }
 
                     CloseButton {
                         anchors.top: parent.top
                         anchors.right: parent.right
-                        anchors.margins: 14
-                        size: 40
+                        anchors.margins: 12
+                        size: 34
                         label: "Đóng ứng dụng"
-                        shown: !!root.current
+                        shown: !!root.current && (frameHover.hovered || hovered)
                         onClicked: root.closeWindow(root.currentIndex)
                     }
                 }
 
-                // Zoom-in when the selection changes
-                SequentialAnimation {
+                // gentle cross-fade when the selection changes
+                ParallelAnimation {
                     id: zoomAnim
-                    ParallelAnimation {
-                        NumberAnimation { target: frame; property: "scale"; from: 0.94; to: 1; duration: 180; easing.type: Easing.OutCubic }
-                        NumberAnimation { target: frame; property: "opacity"; from: 0.4; to: 1; duration: 180 }
-                    }
+                    NumberAnimation { target: frame; property: "scale"; from: 0.985; to: 1; duration: 220; easing.type: Easing.OutCubic }
+                    NumberAnimation { target: frame; property: "opacity"; from: 0.55; to: 1; duration: 220; easing.type: Easing.OutCubic }
+                    NumberAnimation { target: info; property: "opacity"; from: 0; to: 1; duration: 260; easing.type: Easing.OutCubic }
                 }
                 Connections {
                     target: root
                     function onCurrentIndexChanged() { zoomAnim.restart(); }
                 }
 
+                // details under the capture, aligned with its left edge
                 Column {
-                    anchors.horizontalCenter: parent.horizontalCenter
+                    id: info
+                    x: frame.x
+                    width: frame.width
                     anchors.top: frame.bottom
-                    anchors.topMargin: 16
-                    spacing: 4
+                    anchors.topMargin: 18
+                    spacing: 8
                     visible: !!root.current
 
                     Row {
-                        anchors.horizontalCenter: parent.horizontalCenter
                         spacing: 10
+                        width: parent.width
                         IconImage {
                             anchors.verticalCenter: parent.verticalCenter
-                            implicitSize: 26
+                            implicitSize: 20
                             source: root.current ? root.icon(root.current.cls) : ""
                         }
                         Text {
                             anchors.verticalCenter: parent.verticalCenter
+                            width: parent.width - 30
                             text: root.current ? root.current.title : ""
-                            color: "white"
-                            font.pixelSize: 19
-                            font.bold: true
+                            color: "#eef2f8"
+                            font.pixelSize: 15
+                            font.weight: Font.DemiBold
                             elide: Text.ElideRight
-                            width: Math.min(implicitWidth, previewArea.width * 0.8)
                         }
                     }
-                    Text {
-                        anchors.horizontalCenter: parent.horizontalCenter
-                        text: root.current
-                              ? root.current.cls + "  ·  workspace " + root.current.wsName
-                                + "  ·  " + (root.currentIndex + 1) + "/" + root.windows.length
-                              : ""
-                        color: "#99ffffff"
-                        font.pixelSize: 13
+
+                    Row {
+                        spacing: 6
+                        leftPadding: 30
+                        Repeater {
+                            model: {
+                                const c = root.current;
+                                if (!c)
+                                    return [];
+                                const chips = [c.cls, (c.wsId > 0 ? "Workspace " : "") + c.wsName];
+                                if (c.fs)
+                                    chips.push("Full screen");
+                                if (c.floating)
+                                    chips.push("Nổi");
+                                chips.push((root.currentIndex + 1) + " / " + root.windows.length);
+                                return chips;
+                            }
+                            Rectangle {
+                                required property string modelData
+                                required property int index
+                                height: 22
+                                width: chipText.implicitWidth + 16
+                                radius: 6
+                                color: "#12ffffff"
+                                border.width: 1
+                                border.color: "#1affffff"
+                                Text {
+                                    id: chipText
+                                    anchors.centerIn: parent
+                                    text: parent.modelData
+                                    color: "#9aa6ba"
+                                    font.pixelSize: 11
+                                    font.letterSpacing: 0.3
+                                }
+                            }
+                        }
                     }
                 }
             }
