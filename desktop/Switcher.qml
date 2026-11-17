@@ -772,7 +772,7 @@ Scope {
                             radius: 14
                             color: "#141821"
                             border.width: 1
-                            border.color: modelData.focused ? "#5566ccff" : "#22ffffff"
+                            border.color: modelData.focused ? "#666f74ff" : "#22ffffff"
 
                             Column {
                                 id: wsCol
@@ -800,11 +800,34 @@ Scope {
                                     Rectangle {
                                         anchors.verticalCenter: parent.verticalCenter
                                         width: 24; height: 24; radius: 6
-                                        color: wsBox.modelData.focused ? root.accent : "#2a3040"
+                                        color: "#2a3040"
+                                        // current workspace: blue -> purple badge with a soft glow
+                                        Rectangle {
+                                            anchors.fill: parent
+                                            anchors.margins: -3
+                                            radius: 9
+                                            visible: wsBox.modelData.focused
+                                            opacity: 0.35
+                                            gradient: Gradient {
+                                                orientation: Gradient.Horizontal
+                                                GradientStop { position: 0; color: "#2f8cff" }
+                                                GradientStop { position: 1; color: "#9b5cff" }
+                                            }
+                                        }
+                                        Rectangle {
+                                            anchors.fill: parent
+                                            radius: 6
+                                            visible: wsBox.modelData.focused
+                                            gradient: Gradient {
+                                                orientation: Gradient.Horizontal
+                                                GradientStop { position: 0; color: "#2f8cff" }
+                                                GradientStop { position: 1; color: "#9b5cff" }
+                                            }
+                                        }
                                         Text {
                                             anchors.centerIn: parent
                                             text: wsBox.modelData.id > 0 ? wsBox.modelData.id : "S"
-                                            color: wsBox.modelData.focused ? "#0b0d14" : "white"
+                                            color: "white"
                                             font.pixelSize: 13
                                             font.bold: true
                                         }

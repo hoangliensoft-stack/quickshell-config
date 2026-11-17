@@ -1,30 +1,57 @@
 import QtQuick
 
 // "Tiled" pill on a workspace header in the window switcher: opens the workspace with every
-// window tiled. `attention` = the workspace has fullscreen / floating windows (accent tint).
+// window tiled. `attention` = the workspace has fullscreen / floating windows (blue -> purple tint).
 Item {
     id: btn
     property bool attention: false
     signal clicked()
 
     readonly property bool hot: mouse.containsMouse
-    readonly property color accent: "#66ccff"
+    readonly property color blue: "#2f8cff"
+    readonly property color purple: "#9b5cff"
+    readonly property color soft: "#a9b4ff"    // text tint between the two
 
     width: row.implicitWidth + 18
     height: 24
     scale: mouse.pressed ? 0.92 : hot ? 1.05 : 1
     Behavior on scale { NumberAnimation { duration: 140; easing.type: Easing.OutCubic } }
 
+    // edge: grey, or a blue -> purple gradient when it needs attention / is hovered
     Rectangle {
         anchors.fill: parent
         radius: height / 2
-        border.width: 1
-        border.color: btn.hot ? btn.accent : btn.attention ? "#8066ccff" : "#26ffffff"
         gradient: Gradient {
-            GradientStop { position: 0; color: btn.hot ? "#8a66ccff" : btn.attention ? "#3366ccff" : "#26ffffff" }
-            GradientStop { position: 1; color: btn.hot ? "#4d2f8fd0" : btn.attention ? "#1a66ccff" : "#0dffffff" }
+            orientation: Gradient.Horizontal
+            GradientStop { position: 0; color: btn.hot || btn.attention ? btn.blue : "#26ffffff" }
+            GradientStop { position: 1; color: btn.hot || btn.attention ? btn.purple : "#26ffffff" }
         }
-        Behavior on border.color { ColorAnimation { duration: 140 } }
+        opacity: btn.hot ? 1 : btn.attention ? 0.75 : 1
+        Behavior on opacity { NumberAnimation { duration: 140 } }
+    }
+    // body (inset 1px so the edge shows as a border)
+    Rectangle {
+        anchors.fill: parent
+        anchors.margins: 1
+        radius: height / 2
+        color: "#171b28"
+        Rectangle {
+            anchors.fill: parent
+            radius: height / 2
+            opacity: btn.hot ? 0.85 : btn.attention ? 0.22 : 0
+            Behavior on opacity { NumberAnimation { duration: 160 } }
+            gradient: Gradient {
+                orientation: Gradient.Horizontal
+                GradientStop { position: 0; color: btn.blue }
+                GradientStop { position: 1; color: btn.purple }
+            }
+        }
+        Rectangle {   // neutral fill when idle
+            anchors.fill: parent
+            radius: height / 2
+            color: "#14ffffff"
+            opacity: btn.hot || btn.attention ? 0 : 1
+        }
     }
 
     Row {
@@ -47,14 +74,15 @@ Item {
                     x: (index % 2) * (s + icon.gap)
                     y: Math.floor(index / 2) * (s + icon.gap)
                     width: s; height: s; radius: 1.5
-                    color: btn.hot ? "white" : btn.attention ? btn.accent : "#c8d0de"
+                    // tiles run blue -> purple when the workspace needs attention
+                    color: btn.hot ? "white" : btn.attention ? (index === 0 ? btn.blue : index === 3 ? btn.purple : "#6f74ff") : "#c8d0de"
                 }
             }
         }
         Text {
             anchors.verticalCenter: parent.verticalCenter
             text: "Tiled"
-            color: btn.hot ? "white" : btn.attention ? btn.accent : "#c8d0de"
+            color: btn.hot ? "white" : btn.attention ? btn.soft : "#c8d0de"
             font.pixelSize: 12
             font.bold: true
         }
