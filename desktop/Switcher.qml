@@ -954,6 +954,23 @@ Scope {
 
                 readonly property real infoH: 76
                 readonly property real r: 14
+                readonly property real glass: 0.88       // opacity of the live capture (1 = solid)
+                readonly property color blue: "#2f8cff"
+                readonly property color purple: "#9b5cff"
+
+                // slowly flowing blue <-> purple, like the selected bar on the left
+                property real phase: 0
+                NumberAnimation on phase {
+                    from: 0; to: 1
+                    duration: 8000
+                    loops: Animation.Infinite
+                    running: root.shown
+                }
+                function mix(t, a) {
+                    const f = 0.5 - 0.5 * Math.cos(2 * Math.PI * t);
+                    return Qt.rgba(blue.r + (purple.r - blue.r) * f, blue.g + (purple.g - blue.g) * f,
+                                   blue.b + (purple.b - blue.b) * f, a === undefined ? 1 : a);
+                }
 
                 Item {
                     id: frame
@@ -965,24 +982,44 @@ Scope {
                     Behavior on width { NumberAnimation { duration: 180; easing.type: Easing.OutCubic } }
                     Behavior on height { NumberAnimation { duration: 180; easing.type: Easing.OutCubic } }
 
-                    // soft shadow: a few widening, fading rounded rects
-                    Repeater {
-                        model: 4
-                        Rectangle {
-                            required property int index
-                            readonly property real d: 4 + index * 7
-                            x: -d; y: -d + 10
-                            width: frame.width + 2 * d; height: frame.height + 2 * d
-                            radius: previewArea.r + d
-                            color: "black"
-                            opacity: 0.16 - index * 0.035
+                    // blue -> purple glow: one gradient rect, blurred so it fades out smoothly
+                    Rectangle {
+                        anchors.fill: parent
+                        anchors.margins: -6
+                        anchors.topMargin: 0
+                        anchors.bottomMargin: -14
+                        radius: previewArea.r + 6
+                        opacity: frameHover.hovered ? 0.75 : 0.5
+                        Behavior on opacity { NumberAnimation { duration: 200 } }
+                        gradient: Gradient {
+                            orientation: Gradient.Horizontal
+                            GradientStop { position: 0; color: previewArea.mix(previewArea.phase) }
+                            GradientStop { position: 1; color: previewArea.mix(previewArea.phase + 0.5) }
+                        }
+                        layer.enabled: true
+                        layer.effect: MultiEffect {
+                            blurEnabled: true
+                            blur: 1.0
+                            blurMax: 48
+                            autoPaddingEnabled: true
                         }
                     }
 
+                    // frosted glass body (translucent)
                     Rectangle {
                         anchors.fill: parent
                         radius: previewArea.r
-                        color: "#141821"
+                        color: "#a6121624"
+                        Rectangle {
+                            anchors.fill: parent
+                            radius: previewArea.r
+                            opacity: 0.12
+                            gradient: Gradient {
+                                orientation: Gradient.Horizontal
+                                GradientStop { position: 0; color: previewArea.blue }
+                                GradientStop { position: 1; color: previewArea.purple }
+                            }
+                        }
                     }
 
                     ScreencopyView {
@@ -990,6 +1027,7 @@ Scope {
                         anchors.centerIn: parent
                         captureSource: root.shown && root.current ? root.current.toplevel : null
                         live: true
+                        opacity: previewArea.glass
                         constraintSize: Qt.size(previewArea.width - 8, previewArea.height - previewArea.infoH - 8)
                         layer.enabled: true
                         layer.effect: MultiEffect {
@@ -1015,14 +1053,38 @@ Scope {
                         source: root.current ? root.icon(root.current.cls) : ""
                     }
 
-                    // hairline border + a faint top highlight (glass edge)
+                    // flowing blue -> purple border: a gradient rect masked down to a 2px ring
                     Rectangle {
                         anchors.fill: parent
-                        radius: previewArea.r
-                        color: "transparent"
-                        border.width: 1
-                        border.color: frameHover.hovered ? "#8066ccff" : "#2effffff"
-                        Behavior on border.color { ColorAnimation { duration: 160 } }
+                        anchors.margins: -1
+                        radius: previewArea.r + 1
+                        opacity: frameHover.hovered ? 1 : 0.8
+                        Behavior on opacity { NumberAnimation { duration: 160 } }
+                        gradient: Gradient {
+                            orientation: Gradient.Horizontal
+                            GradientStop { position: 0;   color: previewArea.mix(previewArea.phase) }
+                            GradientStop { position: 0.5; color: previewArea.mix(previewArea.phase + 0.33) }
+                            GradientStop { position: 1;   color: previewArea.mix(previewArea.phase + 0.66) }
+                        }
+                        layer.enabled: true
+                        layer.effect: MultiEffect {
+                            maskEnabled: true
+                            maskSource: ringMask
+                        }
+                    }
+                    Item {
+                        id: ringMask
+                        x: -1; y: -1
+                        width: frame.width + 2; height: frame.height + 2
+                        layer.enabled: true
+                        visible: false
+                        Rectangle {
+                            anchors.fill: parent
+                            radius: previewArea.r + 1
+                            color: "transparent"
+                            border.width: 2
+                            border.color: "black"
+                        }
                     }
                     Rectangle {
                         anchors.top: parent.top
@@ -1119,14 +1181,14 @@ Scope {
                                 height: 22
                                 width: chipText.implicitWidth + 16
                                 radius: 6
-                                color: "#12ffffff"
+                                color: Qt.rgba(0.42, 0.45, 1, 0.10)
                                 border.width: 1
-                                border.color: "#1affffff"
+                                border.color: Qt.rgba(0.48, 0.42, 1, 0.28)
                                 Text {
                                     id: chipText
                                     anchors.centerIn: parent
                                     text: parent.modelData
-                                    color: "#9aa6ba"
+                                    color: "#b4bcff"
                                     font.pixelSize: 11
                                     font.letterSpacing: 0.3
                                 }
